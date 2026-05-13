@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/chenqiang1986/rainbow_timetravel/api"
+	"github.com/chenqiang1986/rainbow_timetravel/service"
 	"github.com/gorilla/mux"
-	"github.com/rainbowmga/timetravel/api"
-	"github.com/rainbowmga/timetravel/service"
 )
 
 // logError logs all non-nil errors

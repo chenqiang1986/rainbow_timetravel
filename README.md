@@ -8,7 +8,7 @@ Once you are finished, send us an email with a link to your private repo.
 
 1. Clone the repository to your local machine
 ```bash
-git clone git@github.com:rainbowmga/timetravel.git
+git clone git@github.com:chenqiang1986/rainbow_timetravel.git
 cd timetravel
 ```
 

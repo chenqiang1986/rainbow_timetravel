@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/chenqiang1986/rainbow_timetravel/entity"
+	"github.com/chenqiang1986/rainbow_timetravel/service"
 	"github.com/gorilla/mux"
-	"github.com/rainbowmga/timetravel/entity"
-	"github.com/rainbowmga/timetravel/service"
 )
 
 // POST /records/{id}
