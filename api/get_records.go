@@ -9,7 +9,7 @@ import (
 )
 
 // GET /records/{id}
-// GetRecord retrieves the record.
+// GetRecord retrieves the record of latest version.
 func (a *API) GetRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
