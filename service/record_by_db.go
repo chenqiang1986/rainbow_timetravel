@@ -10,7 +10,9 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 )
 
-// SQLiteRecordStore persists records in a SQLite table with columns (id, data JSON).
+// SQLiteRecordStore persists records in a versioned SQLite table. Each write
+// inserts a new row (id, version, data, created_on); reads come from the
+// records_latest view, which exposes only the highest version per id.
 type SQLiteRecordStore struct {
 	db *sql.DB
 }
@@ -20,7 +22,7 @@ func NewSQLiteRecordStore(db *sql.DB) *SQLiteRecordStore {
 }
 
 func (s *SQLiteRecordStore) GetRecord(ctx context.Context, id int) (entity.Record, error) {
-	data, err := loadRecordData(ctx, s.db, id)
+	data, _, err := loadLatestRecord(ctx, s.db, id)
 	if err != nil {
 		return entity.Record{}, err
 	}
@@ -37,9 +39,10 @@ func (s *SQLiteRecordStore) CreateRecord(ctx context.Context, record entity.Reco
 		return err
 	}
 
-	// Use INSERT and let SQLite enforce the PRIMARY KEY uniqueness.
+	// version 1 is the first version. If any row for this id already exists,
+	// the composite PRIMARY KEY (id, version) makes this insert a no-op.
 	res, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO records (id, data) VALUES (?, ?)`,
+		`INSERT OR IGNORE INTO records (id, version, data) VALUES (?, 1, ?)`,
 		record.ID, string(dataBytes))
 	if err != nil {
 		return err
@@ -61,14 +64,14 @@ func (s *SQLiteRecordStore) UpdateRecord(ctx context.Context, id int, updates ma
 	}
 	defer tx.Rollback()
 
-	data, err := loadRecordData(ctx, tx, id)
+	data, version, err := loadLatestRecord(ctx, tx, id)
 	if err != nil {
 		return entity.Record{}, err
 	}
 
 	applyUpdates(data, updates)
 
-	if err := saveRecordData(ctx, tx, id, data); err != nil {
+	if err := insertRecordVersion(ctx, tx, id, version+1, data); err != nil {
 		return entity.Record{}, err
 	}
 
@@ -84,21 +87,26 @@ type rowQuerier interface {
 	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
 }
 
-func loadRecordData(ctx context.Context, q rowQuerier, id int) (map[string]string, error) {
-	var dataStr string
-	err := q.QueryRowContext(ctx, `SELECT data FROM records WHERE id = ?`, id).Scan(&dataStr)
+func loadLatestRecord(ctx context.Context, q rowQuerier, id int) (map[string]string, int, error) {
+	var (
+		dataStr string
+		version int
+	)
+	err := q.QueryRowContext(ctx,
+		`SELECT data, version FROM records_latest WHERE id = ?`, id,
+	).Scan(&dataStr, &version)
 	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrRecordDoesNotExist
+		return nil, 0, ErrRecordDoesNotExist
 	}
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	data := map[string]string{}
 	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return data, nil
+	return data, version, nil
 }
 
 func applyUpdates(data map[string]string, updates map[string]*string) {
@@ -111,13 +119,13 @@ func applyUpdates(data map[string]string, updates map[string]*string) {
 	}
 }
 
-func saveRecordData(ctx context.Context, tx *sql.Tx, id int, data map[string]string) error {
-	newBytes, err := json.Marshal(data)
+func insertRecordVersion(ctx context.Context, tx *sql.Tx, id, version int, data map[string]string) error {
+	dataBytes, err := json.Marshal(data)
 	if err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx,
-		`UPDATE records SET data = ? WHERE id = ?`,
-		string(newBytes), id)
+		`INSERT INTO records (id, version, data) VALUES (?, ?, ?)`,
+		id, version, string(dataBytes))
 	return err
 }
