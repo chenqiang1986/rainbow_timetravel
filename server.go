@@ -29,14 +29,20 @@ func main() {
 	defer db.Close()
 
 	store := service.NewSQLiteRecordStore(db)
-	api := api.NewAPI(store)
+	apiHandler := api.NewAPI(store)
 
-	apiRoute := router.PathPrefix("/api/v1").Subrouter()
-	apiRoute.Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	healthHandler := func(w http.ResponseWriter, r *http.Request) {
 		err := json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 		logError(err)
-	})
-	api.CreateRoutes(apiRoute)
+	}
+
+	apiV1Route := router.PathPrefix("/api/v1").Subrouter()
+	apiV1Route.Path("/health").HandlerFunc(healthHandler)
+	apiHandler.CreateRoutes(apiV1Route)
+
+	apiV2Route := router.PathPrefix("/api/v2").Subrouter()
+	apiV2Route.Path("/health").HandlerFunc(healthHandler)
+	apiHandler.CreateRoutesV2(apiV2Route)
 
 	address := "127.0.0.1:8000"
 	srv := &http.Server{

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/chenqiang1986/rainbow_timetravel/entity"
 	_ "github.com/mattn/go-sqlite3"
@@ -34,27 +35,24 @@ func (s *SQLiteRecordStore) CreateRecord(ctx context.Context, record entity.Reco
 		return ErrRecordIDInvalid
 	}
 
-	dataBytes, err := json.Marshal(record.Data)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	switch _, _, err := loadLatestRecord(ctx, tx, record.ID); {
+	case err == nil:
+		return ErrRecordAlreadyExists
+	case !errors.Is(err, ErrRecordDoesNotExist):
 		return err
 	}
 
-	// version 1 is the first version. If any row for this id already exists,
-	// the composite PRIMARY KEY (id, version) makes this insert a no-op.
-	res, err := s.db.ExecContext(ctx,
-		`INSERT OR IGNORE INTO records (id, version, data) VALUES (?, 1, ?)`,
-		record.ID, string(dataBytes))
-	if err != nil {
+	if err := insertRecordVersion(ctx, tx, record.ID, 1, record.Data); err != nil {
 		return err
 	}
-	affected, err := res.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return ErrRecordAlreadyExists
-	}
-	return nil
+
+	return tx.Commit()
 }
 
 func (s *SQLiteRecordStore) UpdateRecord(ctx context.Context, id int, updates map[string]*string) (entity.Record, error) {
@@ -128,4 +126,79 @@ func insertRecordVersion(ctx context.Context, tx *sql.Tx, id, version int, data 
 		`INSERT INTO records (id, version, data) VALUES (?, ?, ?)`,
 		id, version, string(dataBytes))
 	return err
+}
+
+func (s *SQLiteRecordStore) ListVersions(ctx context.Context, id int) ([]entity.RecordVersion, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT version, created_on FROM records WHERE id = ? ORDER BY version ASC`,
+		id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var versions []entity.RecordVersion
+	for rows.Next() {
+		var v entity.RecordVersion
+		if err := rows.Scan(&v.Version, &v.Timestamp); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(versions) == 0 {
+		return nil, ErrRecordDoesNotExist
+	}
+	return versions, nil
+}
+
+func (s *SQLiteRecordStore) GetRecordAtVersion(ctx context.Context, id, version int) (entity.RecordSnapshot, error) {
+	var (
+		dataStr   string
+		createdOn time.Time
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT data, created_on FROM records WHERE id = ? AND version = ?`,
+		id, version,
+	).Scan(&dataStr, &createdOn)
+	if errors.Is(err, sql.ErrNoRows) {
+		return entity.RecordSnapshot{}, ErrRecordDoesNotExist
+	}
+	if err != nil {
+		return entity.RecordSnapshot{}, err
+	}
+
+	data := map[string]string{}
+	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+		return entity.RecordSnapshot{}, err
+	}
+	return entity.RecordSnapshot{ID: id, Version: version, Timestamp: createdOn, Data: data}, nil
+}
+
+func (s *SQLiteRecordStore) GetRecordAtTimestamp(ctx context.Context, id int, ts time.Time) (entity.RecordSnapshot, error) {
+	var (
+		dataStr   string
+		version   int
+		createdOn time.Time
+	)
+	err := s.db.QueryRowContext(ctx,
+		`SELECT data, version, created_on FROM records
+		 WHERE id = ? AND created_on <= ?
+		 ORDER BY version DESC LIMIT 1`,
+		id, ts,
+	).Scan(&dataStr, &version, &createdOn)
+	if errors.Is(err, sql.ErrNoRows) {
+		return entity.RecordSnapshot{}, ErrRecordDoesNotExist
+	}
+	if err != nil {
+		return entity.RecordSnapshot{}, err
+	}
+
+	data := map[string]string{}
+	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+		return entity.RecordSnapshot{}, err
+	}
+	return entity.RecordSnapshot{ID: id, Version: version, Timestamp: createdOn, Data: data}, nil
 }
