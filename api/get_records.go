@@ -22,6 +22,10 @@ func (a *API) GetRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lock := a.idLocks.get(int(idNumber))
+	lock.RLock()
+	defer lock.RUnlock()
+
 	record, err := a.records.GetRecord(
 		ctx,
 		int(idNumber),

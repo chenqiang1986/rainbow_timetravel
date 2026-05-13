@@ -34,6 +34,10 @@ func (a *API) PostRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	lock := a.idLocks.get(int(idNumber))
+	lock.Lock()
+	defer lock.Unlock()
+
 	// first retrieve the record
 	record, err := a.records.GetRecord(
 		ctx,

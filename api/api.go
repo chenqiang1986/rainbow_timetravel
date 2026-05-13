@@ -6,11 +6,12 @@ import (
 )
 
 type API struct {
-	records service.RecordService
+	records  service.RecordService
+	idLocks  *idLocks
 }
 
 func NewAPI(records service.RecordService) *API {
-	return &API{records}
+	return &API{records: records, idLocks: newIDLocks()}
 }
 
 // generates all api routes
