@@ -2,14 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 
 	"github.com/chenqiang1986/rainbow_timetravel/entity"
 )
-
-var ErrRecordDoesNotExist = errors.New("record with that id does not exist")
-var ErrRecordIDInvalid = errors.New("record id must >= 0")
-var ErrRecordAlreadyExists = errors.New("record already exists")
 
 // InMemoryRecordService is an in-memory implementation of RecordService.
 type InMemoryRecordService struct {

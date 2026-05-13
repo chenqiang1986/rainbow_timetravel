@@ -2,8 +2,15 @@ package service
 
 import (
 	"context"
+	"errors"
 
 	"github.com/chenqiang1986/rainbow_timetravel/entity"
+)
+
+var (
+	ErrRecordDoesNotExist  = errors.New("record with that id does not exist")
+	ErrRecordIDInvalid     = errors.New("record id must > 0")
+	ErrRecordAlreadyExists = errors.New("record already exists")
 )
 
 // Implements method to get, create, and update record data.

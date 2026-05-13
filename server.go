@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chenqiang1986/rainbow_timetravel/api"
+	"github.com/chenqiang1986/rainbow_timetravel/database"
 	"github.com/chenqiang1986/rainbow_timetravel/service"
 	"github.com/gorilla/mux"
 )
@@ -21,8 +22,14 @@ func logError(err error) {
 func main() {
 	router := mux.NewRouter()
 
-	service := service.NewInMemoryRecordService()
-	api := api.NewAPI(&service)
+	db, err := database.Open("database/rainbow.db")
+	if err != nil {
+		log.Fatalf("open database failed: %v", err)
+	}
+	defer db.Close()
+
+	store := service.NewSQLiteRecordStore(db)
+	api := api.NewAPI(store)
 
 	apiRoute := router.PathPrefix("/api/v1").Subrouter()
 	apiRoute.Path("/health").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
