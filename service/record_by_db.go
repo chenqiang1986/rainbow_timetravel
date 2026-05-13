@@ -20,17 +20,8 @@ func NewSQLiteRecordStore(db *sql.DB) *SQLiteRecordStore {
 }
 
 func (s *SQLiteRecordStore) GetRecord(ctx context.Context, id int) (entity.Record, error) {
-	var dataStr string
-	err := s.db.QueryRowContext(ctx, `SELECT data FROM records WHERE id = ?`, id).Scan(&dataStr)
-	if errors.Is(err, sql.ErrNoRows) {
-		return entity.Record{}, ErrRecordDoesNotExist
-	}
+	data, err := loadRecordData(ctx, s.db, id)
 	if err != nil {
-		return entity.Record{}, err
-	}
-
-	data := map[string]string{}
-	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
 		return entity.Record{}, err
 	}
 	return entity.Record{ID: id, Data: data}, nil
@@ -70,36 +61,14 @@ func (s *SQLiteRecordStore) UpdateRecord(ctx context.Context, id int, updates ma
 	}
 	defer tx.Rollback()
 
-	var dataStr string
-	err = tx.QueryRowContext(ctx, `SELECT data FROM records WHERE id = ?`, id).Scan(&dataStr)
-	if errors.Is(err, sql.ErrNoRows) {
-		return entity.Record{}, ErrRecordDoesNotExist
-	}
+	data, err := loadRecordData(ctx, tx, id)
 	if err != nil {
 		return entity.Record{}, err
 	}
 
-	data := map[string]string{}
-	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
-		return entity.Record{}, err
-	}
+	applyUpdates(data, updates)
 
-	for key, value := range updates {
-		if value == nil {
-			delete(data, key)
-		} else {
-			data[key] = *value
-		}
-	}
-
-	newBytes, err := json.Marshal(data)
-	if err != nil {
-		return entity.Record{}, err
-	}
-
-	if _, err := tx.ExecContext(ctx,
-		`UPDATE records SET data = ? WHERE id = ?`,
-		string(newBytes), id); err != nil {
+	if err := saveRecordData(ctx, tx, id, data); err != nil {
 		return entity.Record{}, err
 	}
 
@@ -108,4 +77,47 @@ func (s *SQLiteRecordStore) UpdateRecord(ctx context.Context, id int, updates ma
 	}
 
 	return entity.Record{ID: id, Data: data}, nil
+}
+
+// rowQuerier is satisfied by both *sql.DB and *sql.Tx.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row
+}
+
+func loadRecordData(ctx context.Context, q rowQuerier, id int) (map[string]string, error) {
+	var dataStr string
+	err := q.QueryRowContext(ctx, `SELECT data FROM records WHERE id = ?`, id).Scan(&dataStr)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrRecordDoesNotExist
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	data := map[string]string{}
+	if err := json.Unmarshal([]byte(dataStr), &data); err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func applyUpdates(data map[string]string, updates map[string]*string) {
+	for key, value := range updates {
+		if value == nil {
+			delete(data, key)
+		} else {
+			data[key] = *value
+		}
+	}
+}
+
+func saveRecordData(ctx context.Context, tx *sql.Tx, id int, data map[string]string) error {
+	newBytes, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	_, err = tx.ExecContext(ctx,
+		`UPDATE records SET data = ? WHERE id = ?`,
+		string(newBytes), id)
+	return err
 }
