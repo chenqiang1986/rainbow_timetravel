@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 
 	"github.com/gorilla/mux"
 )
@@ -12,24 +11,16 @@ import (
 // GetRecord retrieves the record of latest version.
 func (a *API) GetRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := mux.Vars(r)["id"]
-
-	idNumber, err := strconv.ParseInt(id, 10, 32)
-
-	if err != nil || idNumber <= 0 {
-		err := writeError(w, "invalid id; id must be a positive number", http.StatusBadRequest)
-		logError(err)
+	idNumber, ok := parseID(w, mux.Vars(r)["id"])
+	if !ok {
 		return
 	}
 
-	lock := a.idLocks.get(int(idNumber))
+	lock := a.idLocks.get(idNumber)
 	lock.RLock()
 	defer lock.RUnlock()
 
-	record, err := a.records.GetRecord(
-		ctx,
-		int(idNumber),
-	)
+	record, err := a.records.GetRecord(ctx, idNumber)
 	if err != nil {
 		err := writeError(w, fmt.Sprintf("record of id %v does not exist", idNumber), http.StatusBadRequest)
 		logError(err)

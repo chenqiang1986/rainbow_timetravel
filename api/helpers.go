@@ -40,11 +40,11 @@ func writeError(w http.ResponseWriter, message string, statusCode int) error {
 // parseID parses the {id} path variable and writes a 400 response on failure.
 // Returns (id, true) on success or (0, false) on failure.
 func parseID(w http.ResponseWriter, raw string) (int, bool) {
-	idNumber, err := strconv.ParseInt(raw, 10, 32)
+	idNumber, err := strconv.Atoi(raw)
 	if err != nil || idNumber <= 0 {
 		err := writeError(w, "invalid id; id must be a positive number", http.StatusBadRequest)
 		logError(err)
 		return 0, false
 	}
-	return int(idNumber), true
+	return idNumber, true
 }

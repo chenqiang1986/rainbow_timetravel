@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/chenqiang1986/rainbow_timetravel/entity"
 	"github.com/chenqiang1986/rainbow_timetravel/service"
@@ -16,17 +15,13 @@ import (
 // if the record doesn't exist, the record is created.
 func (a *API) PostRecords(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	id := mux.Vars(r)["id"]
-	idNumber, err := strconv.ParseInt(id, 10, 32)
-
-	if err != nil || idNumber <= 0 {
-		err := writeError(w, "invalid id; id must be a positive number", http.StatusBadRequest)
-		logError(err)
+	idNumber, ok := parseID(w, mux.Vars(r)["id"])
+	if !ok {
 		return
 	}
 
 	var body map[string]*string
-	err = json.NewDecoder(r.Body).Decode(&body)
+	err := json.NewDecoder(r.Body).Decode(&body)
 
 	if err != nil {
 		err := writeError(w, "invalid input; could not parse json", http.StatusBadRequest)
@@ -34,18 +29,15 @@ func (a *API) PostRecords(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lock := a.idLocks.get(int(idNumber))
+	lock := a.idLocks.get(idNumber)
 	lock.Lock()
 	defer lock.Unlock()
 
 	// first retrieve the record
-	record, err := a.records.GetRecord(
-		ctx,
-		int(idNumber),
-	)
+	record, err := a.records.GetRecord(ctx, idNumber)
 
 	if !errors.Is(err, service.ErrRecordDoesNotExist) { // record exists
-		record, err = a.records.UpdateRecord(ctx, int(idNumber), body)
+		record, err = a.records.UpdateRecord(ctx, idNumber, body)
 	} else { // record does not exist
 
 		// exclude the delete updates
@@ -57,7 +49,7 @@ func (a *API) PostRecords(w http.ResponseWriter, r *http.Request) {
 		}
 
 		record = entity.Record{
-			ID:   int(idNumber),
+			ID:   idNumber,
 			Data: recordMap,
 		}
 		err = a.records.CreateRecord(ctx, record)

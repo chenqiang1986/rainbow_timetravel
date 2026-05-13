@@ -14,7 +14,7 @@ import (
 
 // GET /records/{id}/at?version={n}
 // GET /records/{id}/at?timestamp={RFC3339}
-// Returns the record as of the given version OR right before timestamp. 
+// Returns the record as of the given version OR right before timestamp.
 // Exactly one of the two query parameters must be supplied.
 func (a *API) GetRecordAt(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
